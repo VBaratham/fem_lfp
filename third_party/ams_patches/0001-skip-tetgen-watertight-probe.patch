@@ -1,0 +1,32 @@
+--- a/src/mesh_processing.py	2026-05-05 19:47:27
++++ b/src/mesh_processing.py	2026-05-05 19:47:27
+@@ -61,22 +61,14 @@
+     # Apply a quick check using trimesh. 
+     tmesh = mlab2tmesh(ms)
+     
+-    # if not(tmesh.is_watertight):
+-    #     # Quick check but may have false negative, so check with tetgen
+-    #     return is_watertight_tetgen(ms)
+-    # else:
+-    #     return  True
+-    print('Checking self-intersections with TetGen')
+-    try:
+-        no_self_intersections=is_watertight_tetgen(ms,name)
+-    except ImportError as e:
+-        print(repr(e))
+-        warnings.warn('Appplying PymeshLab filter instead. Accuracy may be lower.')
+-        ms.compute_selection_by_small_disconnected_components_per_face()
+-        no_self_intersections= ms.current_mesh().selected_face_number() == 0
+-        
++    # fem_lfp patch (2026-05-04): the upstream AMS calls TetGen with
++    # ``-dBENF`` to probe self-intersections on the alpha-wrap. On
++    # M&S j7 (1500+ pt3d → ~1.7M alpha-wrap faces) that probe runs
++    # 25+ min and frequently hangs. Trust trimesh's is_watertight
++    # alone — TetGen volume meshing downstream catches any remaining
++    # self-intersection by failing the .poly tetrahedralization.
++    no_self_intersections = True
+     flag = tmesh.is_watertight and no_self_intersections
+-
+     return flag
+ 
+ def is_watertight_tetgen(ms,temp_dir_name):

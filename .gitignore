@@ -1,0 +1,28 @@
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.env
+.coverage
+*.xdmf
+*.h5
+*.vtu
+*.pvd
+*.msh
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.cache/
+output/
+scenarios/*/trace*.npz
+scenarios/*/*.png
+scenarios/*/cells/
+scenarios/*/_fem_lfp_cache/
+scenarios/*/_mesh.swc
+
+# Vendored AMS clones that should not be committed (large + GPL).
+# Patches live at third_party/ams_patches/.
+third_party/Alpha_Mesh_Swc_patched/
+third_party/Alpha_Mesh_Swc/
