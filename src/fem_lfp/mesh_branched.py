@@ -33,10 +33,11 @@ def _ensure_fem_neuron_on_path() -> None:
     if explicit:
         candidates = [Path(explicit).expanduser()]
     else:
+        # Walk up from this file looking for a sibling ``fem_neuron/src``.
+        # Searching (rather than a fixed parents[N]) keeps this working
+        # from nested checkouts — git worktrees, monorepos, etc.
         here = Path(__file__).resolve()
-        candidates = [
-            here.parents[3] / "fem_neuron" / "src",   # default sibling layout
-        ]
+        candidates = [p / "fem_neuron" / "src" for p in here.parents]
     for c in candidates:
         if (c / "fem_neuron" / "__init__.py").is_file():
             if str(c) not in sys.path:

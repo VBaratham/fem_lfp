@@ -6,6 +6,10 @@ log-spaced set of radial probes from just outside the membrane out to a
 millimeter, so the FEM-vs-LSA comparison spans both the near-field
 (probe geometry / finite tissue boundaries matter) and the far-field
 (LSA's homogeneous-infinite-medium assumption is fine).
+
+This scenario just *builds and drives the cell*; the extracellular
+forward model (mesh + FEM + LSA) is handled by
+:class:`fem_lfp.ExtracellularModel` in the driver script.
 """
 from __future__ import annotations
 
@@ -25,26 +29,14 @@ PROBES_UM = np.array(
     dtype=np.float64,
 )
 
-# Mesh sizing — graded ECS, matching the values that gave clean
-# FEM-vs-LSA at near probes in the original cylinder run (25k DOFs,
-# ~100s wall time). The Stage-1 ramp covers the probe shell;
-# Stage 2 (set per-pad in the sweep script) only kicks in when
-# ``ecs_pad_um`` is larger than the probe shell, to keep DOF count
-# tractable in the bulk.
+# ECS mesh sizing (passed straight to ExtracellularModel as overrides).
+# Graded: fine at the membrane, coarser toward the Dirichlet wall. The
+# sweep script overrides ecs_pad_um / h_far_um to study wall bias.
 MESH = dict(
-    L_um=L_UM,
-    radius_um=DIAM_UM / 2.0,
-    ecs_pad_um=1500.0,           # default: small box for fast iteration.
-                                  # Sweep script overrides up to ≥5× outer
-                                  # probe to study Dirichlet wall bias.
+    ecs_pad_um=1500.0,
     h_membrane_um=0.8,
     h_outer_um=80.0,
-    grade_distance_um=400.0,     # original M3.5-validated probe-shell
-                                  # value; keeps mesh ~25k DOFs / 150k
-                                  # cells so per-step solve stays
-                                  # ~300 ms. Stage-2 grading (sweep
-                                  # script) extends the box without
-                                  # exploding DOF count.
+    grade_distance_um=400.0,
 )
 
 # Stim
@@ -58,17 +50,22 @@ DT_MS = 0.025
 TITLE = "HH cylinder, 0.6 nA × 0.5 ms IClamp at center"
 
 
-def run_neuron():
-    """Run the NEURON sim, return a NeuronRun."""
+# Module-level keepalive: NEURON garbage-collects sections/objects whose
+# only Python references are function locals once build_cell() returns.
+_KEEPALIVE: list = []
+
+
+def build_cell():
+    """Build the HH cable + stimulus. Returns the section list.
+
+    Does NOT record or run — the caller arms recording (via
+    ExtracellularModel) *before* finitialize, then runs, then solves.
+    """
     import os
     # NEURON latches cwd at import; do it here in a clean cwd.
     os.environ.setdefault("NEURON_HOME", "")
     from neuron import h
     h.load_file("stdrun.hoc")
-
-    from fem_lfp.neuron_sim import (
-        setup_imem_recording, finalize_run,
-    )
 
     sec = h.Section(name="cyl")
     sec.L = L_UM
@@ -93,18 +90,14 @@ def run_neuron():
     stim.dur = STIM["dur_ms"]
     stim.amp = STIM["amp_nA"]
 
-    handles = setup_imem_recording([sec])
-    t_vec = h.Vector().record(h._ref_t)
-    rec_v = {
-        "soma(0.5)": h.Vector().record(sec(0.5)._ref_v),
-        "soma(0.0)": h.Vector().record(sec(0.0)._ref_v),
-    }
+    _KEEPALIVE.extend([sec, stim])
+    return [sec]
 
+
+def run():
+    """Initialize and integrate the cable equation."""
+    from neuron import h
     h.dt = DT_MS
     h.celsius = 6.3   # canonical HH temperature
     h.finitialize(-65.0)
     h.continuerun(T_STOP_MS)
-
-    # Keep `stim` alive — NEURON GC's locals across return.
-    _keepalive = (sec, stim, t_vec, rec_v, handles)
-    return finalize_run(handles, t_vec, rec_v)

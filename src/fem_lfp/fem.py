@@ -201,8 +201,15 @@ class EcsPoissonSolver:
     ) -> None:
         # Scale mesh to meters so all FEM operations are in SI. Caller
         # may pass an already-scaled mesh (scale_mesh_to_meters=False).
-        if scale_mesh_to_meters:
+        # This mutates mesh.geometry.x in place, so guard against scaling
+        # the same mesh object twice (e.g. two solvers on one mesh) —
+        # a double scale would silently shrink the geometry by 1e-12.
+        if scale_mesh_to_meters and not getattr(mesh, "_fem_lfp_scaled_m", False):
             mesh.geometry.x[:] *= 1e-6
+            try:
+                mesh._fem_lfp_scaled_m = True
+            except (AttributeError, TypeError):
+                pass  # can't tag this mesh object; caller must avoid reuse
 
         self.mesh = mesh
         self.sigma = sigma_S_per_m
@@ -333,6 +340,11 @@ class EcsPoissonSolver:
         ksp.setFromOptions()
         self.ksp = ksp
 
+        # Geometry is static across timesteps, so build the probe
+        # bounding-box tree once here instead of on every probe() call
+        # (which was rebuilding it once per timestep).
+        self._bb_tree = geometry.bb_tree(mesh, mesh.topology.dim)
+
     # -------------------------------------------------------------- #
     def _partition_membrane_facets(
         self,
@@ -433,9 +445,8 @@ class EcsPoissonSolver:
         if pts.ndim == 1:
             pts = pts[None, :]
 
-        # Build a bb_tree once per call (cheap relative to a solve).
-        bbt = geometry.bb_tree(self.mesh, self.mesh.topology.dim)
-        cand = geometry.compute_collisions_points(bbt, pts)
+        # Reuse the bb_tree built at construction (geometry is static).
+        cand = geometry.compute_collisions_points(self._bb_tree, pts)
         cells = geometry.compute_colliding_cells(self.mesh, cand, pts)
 
         out = np.full(pts.shape[0], np.nan, dtype=np.float64)

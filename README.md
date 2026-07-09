@@ -46,15 +46,68 @@ conda activate fem_neuron-env   # reuse the fem_neuron environment
 pip install -e .
 ```
 
-## Run
+`dolfinx`, `gmsh`, and `neuron` come from the conda env. The `cylinder`
+mesher is self-contained; the `branched` and `body_fitted` meshers
+additionally need the sibling `fem_neuron` package (and, for
+`body_fitted`, a patched Alpha_Mesh_Swc — see `third_party/`).
+
+## Quickstart
+
+You drive your own NEURON simulation; `fem_lfp` turns it into an
+extracellular potential. Build the model **before** `finitialize` (that
+arms the current recording), run, then `solve`:
+
+```python
+import numpy as np
+from neuron import h
+from fem_lfp import ExtracellularModel
+
+# ... build your cell, set nseg / biophysics / stimulus, then: ...
+h.define_shape()                      # ensure every section has 3D points
+
+probes_um = np.array([[r, 0.0, 0.0] for r in (20, 50, 100, 400)])
+model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
+
+h.finitialize(-65); h.continuerun(30)
+
+result = model.solve()                # V_e at every probe, shape (time, probe)
+result.plot("lfp.png")                # V_m + V_e(t) + V_e(r) overlay
+result.save("lfp.npz")                # everything, reloadable via .load()
+```
+
+`result.v_e_fem_uV` is the FEM solution in µV; `result.v_e_lsa_uV` is the
+line-source approximation over the same currents, for reference.
+
+**Knobs** (all optional, sensible defaults):
+
+```python
+ExtracellularModel(
+    sections, probes_um,
+    mesh="auto",        # "cylinder" | "branched" | "body_fitted" | "auto"
+    sigma=0.3,          # extracellular conductivity, S/m
+    ecs_pad_um=...,     # how far the tissue box extends past the cell
+    h_membrane_um=...,  # mesh resolution at the membrane
+    h_outer_um=...,     # mesh resolution at the box wall
+)
+```
+
+`mesh="auto"` picks `cylinder` for a single straight z-cable and
+`branched` for anything with real morphology. See `fem_lfp.MESHERS` for
+what each mesher does. Only need the analytical reference? `model
+.line_source()` skips the mesh and FEM entirely.
+
+## Bundled scenarios
+
+Three worked examples, each a `scenario.py` (builds the cell) + a driver
+script (wraps it in an `ExtracellularModel`):
 
 ```bash
-# 1. Single-cylinder HH cable: clean FEM-vs-LSA demo
+# 1. Single-cylinder HH cable: clean FEM-vs-LSA demo (self-contained)
 python scripts/cylinder_compare.py
 python scripts/cylinder_pad_sweep.py    # box-size convergence study
 
-# 2. Mainen & Sejnowski j7 reconstruction (uses fem_neuron's branched
-#    mesh pipeline; reuses fem_neuron/comparisons/ms_j7/cells/).
+# 2. Mainen & Sejnowski j7 reconstruction (needs sibling fem_neuron;
+#    reuses fem_neuron/comparisons/ms_j7/cells/).
 python scripts/ms_j7_compare.py
 python scripts/ms_j7_compare.py --body-fitted   # AMS+TetGen, cleaner
 
@@ -63,7 +116,7 @@ python scripts/ms_j7_compare.py --body-fitted   # AMS+TetGen, cleaner
 python scripts/bbp_compare.py --body-fitted
 ```
 
-## Status
+## Validation
 
 **Cylinder (200 µm × 5 µm HH cable):** clean LSA-vs-FEM agreement.
 At near probes (r ≤ 100 µm) FEM matches LSA to ≤ 1-2 %; at far probes
@@ -97,9 +150,12 @@ center, and probes near the cell see the geometric difference.
 
 ```
 src/fem_lfp/
+  model.py           # PUBLIC INTERFACE: ExtracellularModel + result object.
+                     # Owns the whole pipeline; the rest is machinery it drives
+  plotting.py        # shared FEM-vs-LSA overlay figure
   lsa.py             # closed-form line-source approximation (numpy-only)
-  neuron_sim.py      # NEURON helpers: i_membrane capture, pt3d slicing,
-                     # SWC export
+  neuron_sim.py      # NEURON helpers: i_membrane capture, geometry capture,
+                     # pt3d slicing, SWC export
   mesh_cylinder.py   # ECS-only mesh for a single cylindrical cell
   mesh_branched.py   # ECS-only mesh for branched cells via fem_neuron's
                      # OCC-fuse branched mesher + ECS submesh extraction
