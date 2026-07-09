@@ -23,7 +23,23 @@ import numpy as np
 
 # fem_neuron's pre-set-up cells dir. ``setup.py`` in that scenario
 # fetches from ModelDB 2488 + compiles the .mod files via nrnivmodl.
-FEM_NEURON_ROOT = Path(__file__).resolve().parents[3] / "fem_neuron"
+# Locate the fem_neuron checkout by honoring FEM_LFP_FEM_NEURON_SRC
+# (its parent) or searching upward for a sibling ``fem_neuron`` dir, so
+# this works from nested checkouts (git worktrees, monorepos) too.
+def _find_fem_neuron_root() -> Path:
+    explicit = os.environ.get("FEM_LFP_FEM_NEURON_SRC")
+    if explicit:
+        return Path(explicit).expanduser().parent
+    here = Path(__file__).resolve()
+    for p in here.parents:
+        cand = p / "fem_neuron"
+        if (cand / "comparisons" / "ms_j7").is_dir():
+            return cand
+    # Fall back to the historical sibling layout for a clear error later.
+    return here.parents[3] / "fem_neuron"
+
+
+FEM_NEURON_ROOT = _find_fem_neuron_root()
 CELLS_DIR = FEM_NEURON_ROOT / "comparisons" / "ms_j7" / "cells"
 
 # Probes radially out from the cell, in the cell's HOC frame (j7's

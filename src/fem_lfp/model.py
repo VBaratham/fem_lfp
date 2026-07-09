@@ -364,19 +364,23 @@ class ExtracellularModel:
 
         # NaN at a probe means it fell outside the extracellular mesh —
         # either inside the cell (which was carved out) or beyond the box.
-        # This is the most common surprise, so flag it explicitly.
+        # This is the most common surprise, so flag it explicitly. Write
+        # to stderr rather than warnings.warn: importing the FEM/plotting
+        # stack often resets the global warnings filter to "ignore", which
+        # would silently swallow this guardrail.
         nan_probes = np.where(np.isnan(v_e_fem_uV).any(axis=0))[0]
         if nan_probes.size:
-            import warnings
+            import sys
             bad = ", ".join(
-                f"{tuple(np.round(self.probes_um[i], 1))}" for i in nan_probes
+                "(" + ", ".join(f"{c:.1f}" for c in self.probes_um[i]) + ")"
+                for i in nan_probes
             )
-            warnings.warn(
-                f"{nan_probes.size} probe(s) returned NaN (outside the "
-                f"extracellular mesh — inside the cell or beyond the "
-                f"ecs_pad_um box): {bad}. Move them into the ECS or grow "
+            print(
+                f"[fem_lfp] WARNING: {nan_probes.size} probe(s) returned NaN "
+                f"(outside the extracellular mesh — inside the cell or beyond "
+                f"the ecs_pad_um box): {bad}. Move them into the ECS or grow "
                 f"ecs_pad_um.",
-                stacklevel=2,
+                file=sys.stderr,
             )
 
         v_e_lsa_uV = None
