@@ -1,14 +1,17 @@
 """Hay et al. 2011 BBP-style L5 PC: NEURON + LSA + ECS-FEM overlay.
 
-Same pipeline as ms_j7_compare.py — only the scenario import + output
-dir differ. ``--body-fitted`` uses AMS + TetGen instead of fem_neuron's
-branched OCC mesher. The body-fitted mesher auto-anchors TetGen's
-interior point at the soma center (from the captured geometry), which
-the plain COM heuristic gets wrong on this cell's long apical dendrite.
+Defaults to the body-fitted mesher (AMS + TetGen): Hay's 196-section
+morphology is impractical for the branched OCC mesher (its optimizer
+crawls on that many fused primitives), so body-fitted is the validated
+path for this cell. Body-fitted auto-anchors TetGen's interior point at
+the soma center (from the captured geometry), which the plain COM
+heuristic gets wrong on this cell's long apical dendrite.
 
-    python scripts/bbp_compare.py                 # branched OCC mesh
-    python scripts/bbp_compare.py --body-fitted   # AMS + TetGen mesh
+    python scripts/bbp_compare.py                 # body-fitted (default)
+    python scripts/bbp_compare.py --branched      # branched OCC (slow!)
     python scripts/bbp_compare.py --replot        # regen plot from npz
+
+Body-fitted needs a patched Alpha_Mesh_Swc clone; see third_party/.
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(SCEN_DIR))
 
 
-def run_full(body_fitted: bool = False) -> None:
+def run_full(mesh: str = "body_fitted") -> None:
     import scenario as sc
     from fem_lfp import ExtracellularModel
 
@@ -35,7 +38,7 @@ def run_full(body_fitted: bool = False) -> None:
           f"V_m peak {nrun.rec_v_mV['soma(0.5)'].max():.1f} mV "
           f"in {time.time() - t0:.1f}s")
 
-    mesh = "body_fitted" if body_fitted else "branched"
+    body_fitted = mesh == "body_fitted"
     mesh_kwargs = sc.MESH_BODY_FITTED if body_fitted else sc.MESH
 
     sections = None
@@ -68,13 +71,14 @@ def replot() -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--replot", action="store_true")
-    p.add_argument("--body-fitted", action="store_true",
-                   help="use AMS + TetGen body-fitted mesh")
+    p.add_argument("--branched", action="store_true",
+                   help="use fem_neuron's branched OCC mesher instead of the "
+                        "default body-fitted mesh (slow on this cell)")
     args = p.parse_args()
     if args.replot:
         replot()
     else:
-        run_full(body_fitted=args.body_fitted)
+        run_full(mesh="branched" if args.branched else "body_fitted")
 
 
 if __name__ == "__main__":

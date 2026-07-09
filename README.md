@@ -99,22 +99,38 @@ what each mesher does. Only need the analytical reference? `model
 ## Bundled scenarios
 
 Three worked examples, each a `scenario.py` (builds the cell) + a driver
-script (wraps it in an `ExtracellularModel`):
+script (wraps it in an `ExtracellularModel`). **Clone and run** — the two
+reconstruction scenarios download their cell from ModelDB and compile its
+NMODL mechanisms on first run (cached afterward); no manual setup.
 
 ```bash
-# 1. Single-cylinder HH cable: clean FEM-vs-LSA demo (self-contained)
+# 1. Single-cylinder HH cable: clean FEM-vs-LSA demo (fully self-contained)
 python scripts/cylinder_compare.py
 python scripts/cylinder_pad_sweep.py    # box-size convergence study
 
-# 2. Mainen & Sejnowski j7 reconstruction (needs sibling fem_neuron;
-#    reuses fem_neuron/comparisons/ms_j7/cells/).
-python scripts/ms_j7_compare.py
+# 2. Mainen & Sejnowski j7 spiny stellate (auto-downloads ModelDB 2488).
+python scripts/ms_j7_compare.py                 # branched mesh (default)
 python scripts/ms_j7_compare.py --body-fitted   # AMS+TetGen, cleaner
 
-# 3. Hay 2011 BBP-style L5 PC (download from ModelDB 139653 once,
-#    nrnivmodl in cells/L5bPCmodelsEH/mod first).
-python scripts/bbp_compare.py --body-fitted
+# 3. Hay 2011 BBP-style L5 PC (auto-downloads ModelDB 139653).
+python scripts/bbp_compare.py                   # body-fitted (default)
 ```
+
+Cell downloads land in `scenarios/<name>/cells/` (git-ignored).
+
+### Meshers
+
+- **`cylinder`** — self-contained, for a single straight cable. No extra deps.
+- **`branched`** — fem_neuron fuses one cylinder per section (OpenCASCADE).
+  Good for modest morphologies; its optimizer becomes impractically slow on
+  large cells (Hay's 196 sections take 15+ min), which is why bbp defaults to
+  body-fitted.
+- **`body_fitted`** — AlphaMeshSwc wraps the whole cell in one watertight
+  surface, then TetGen volume-meshes it. Cleanest for complex morphologies;
+  needs a patched Alpha_Mesh_Swc clone (`bash third_party/ams_patches/apply.sh
+  /path/to/Alpha_Mesh_Swc`, then set `FEM_NEURON_AMS_ROOT` or place it at
+  `~/claude/Alpha_Mesh_Swc`). `mesh="auto"` never picks this, so the default
+  path needs no external mesh tool.
 
 ## Validation
 

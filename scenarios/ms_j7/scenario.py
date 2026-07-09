@@ -21,26 +21,12 @@ from pathlib import Path
 import numpy as np
 
 
-# fem_neuron's pre-set-up cells dir. ``setup.py`` in that scenario
-# fetches from ModelDB 2488 + compiles the .mod files via nrnivmodl.
-# Locate the fem_neuron checkout by honoring FEM_LFP_FEM_NEURON_SRC
-# (its parent) or searching upward for a sibling ``fem_neuron`` dir, so
-# this works from nested checkouts (git worktrees, monorepos) too.
-def _find_fem_neuron_root() -> Path:
-    explicit = os.environ.get("FEM_LFP_FEM_NEURON_SRC")
-    if explicit:
-        return Path(explicit).expanduser().parent
-    here = Path(__file__).resolve()
-    for p in here.parents:
-        cand = p / "fem_neuron"
-        if (cand / "comparisons" / "ms_j7").is_dir():
-            return cand
-    # Fall back to the historical sibling layout for a clear error later.
-    return here.parents[3] / "fem_neuron"
-
-
-FEM_NEURON_ROOT = _find_fem_neuron_root()
-CELLS_DIR = FEM_NEURON_ROOT / "comparisons" / "ms_j7" / "cells"
+# Self-contained cells dir, fetched from ModelDB 2488 on first run. The
+# M&S 1996 archive (demofig1.hoc + cells/j7.hoc + na/kv/km/ca/cad/kca
+# mechanisms) is downloaded + compiled by fem_lfp.modeldb, so this
+# scenario no longer depends on a fem_neuron checkout for its cell data
+# (fem_neuron is still used for the branched mesher — a code dependency).
+CELLS_DIR = Path(__file__).resolve().parent / "cells"
 
 # Probes radially out from the cell, in the cell's HOC frame (j7's
 # soma sits near (0, 0, 0); cell extends ~±200 µm in xy and ±400 µm
@@ -90,12 +76,11 @@ def run_neuron():
     ``demofig1.hoc`` builds the j7 cell with the M&S 1996 channel
     densities (Na/Kv/Km/Ca/KCa). It also sets ``celsius=37`` and
     declares hoc-side stim/recording — we override stim after load.
+
+    Downloads ModelDB 2488 + compiles its mechanisms on first run.
     """
-    if not (CELLS_DIR / "demofig1.hoc").is_file():
-        raise RuntimeError(
-            f"M&S 1996 archive not found at {CELLS_DIR}. "
-            f"Run `python {FEM_NEURON_ROOT}/comparisons/ms_j7/setup.py` first."
-        )
+    from fem_lfp.modeldb import ensure_cell
+    ensure_cell(2488, CELLS_DIR, inner="cells", mod_subdir="")
 
     cwd_before = os.getcwd()
     os.chdir(CELLS_DIR)
