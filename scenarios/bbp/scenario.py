@@ -62,17 +62,22 @@ _KEEPALIVE: list = []
 
 
 def run_neuron():
-    """Load Hay et al. L5 PC, run, return NeuronRun + section_info."""
-    if not (HAY_ROOT / "models" / "L5PCtemplate.hoc").is_file():
-        raise RuntimeError(
-            f"Hay 2011 cell not found at {HAY_ROOT}. "
-            f"Download ModelDB 139653 + run nrnivmodl in cells/L5bPCmodelsEH/mod/"
-        )
-    if not (HAY_ROOT / "mod" / "arm64" / "libnrnmech.dylib").is_file():
-        raise RuntimeError(
-            f"NMODL libs not compiled. Run "
-            f"`cd {HAY_ROOT}/mod && nrnivmodl` first."
-        )
+    """Load Hay et al. L5 PC, run, return NeuronRun + section_info.
+
+    Downloads ModelDB 139653 and compiles its NMODL mechanisms on first
+    run (idempotent) so the scenario is clone-and-run.
+    """
+    from fem_lfp.modeldb import ensure_cell
+    ensure_cell(139653, HAY_ROOT, inner="L5bPCmodelsEH", mod_subdir="mod")
+
+    # Resolve the compiled mechanism library (arch dir name is platform
+    # specific: arm64 / x86_64 / .libs).
+    libs = (list((HAY_ROOT / "mod").glob("*/libnrnmech.dylib"))
+            + list((HAY_ROOT / "mod").glob("*/libnrnmech.so"))
+            + list((HAY_ROOT / "mod").glob("*/.libs/libnrnmech.so")))
+    if not libs:
+        raise RuntimeError(f"no compiled libnrnmech under {HAY_ROOT / 'mod'}")
+    mech_lib = libs[0]
 
     cwd_before = os.getcwd()
     os.chdir(HAY_ROOT)
@@ -82,7 +87,7 @@ def run_neuron():
         h.load_file("stdrun.hoc")
         h.load_file("import3d.hoc")
         # Load the .mod libraries we just compiled.
-        h.nrn_load_dll(str(HAY_ROOT / "mod" / "arm64" / "libnrnmech.dylib"))
+        h.nrn_load_dll(str(mech_lib))
         # Load biophysics + template.
         h.load_file("models/L5PCbiophys3.hoc")
         h.load_file("models/L5PCtemplate.hoc")

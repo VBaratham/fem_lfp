@@ -74,8 +74,66 @@ def _interp_pt(arc_norm: np.ndarray, pts: np.ndarray, x: float) -> np.ndarray:
 
 
 @dataclass
+class SectionGeometry:
+    """Per-section pt3d geometry the mesher + segmentation need.
+
+    ``points_um`` / ``diameters_um`` are the section's full pt3d polyline
+    (NOT simplified); ``nseg`` matches NEURON's compartment count. The
+    façade captures one of these per section, in the SAME order the
+    per-segment ``imem`` currents are recorded, so segment indices line up.
+    """
+    name: str
+    points_um: np.ndarray       # (npts, 3)
+    diameters_um: np.ndarray    # (npts,)
+    nseg: int
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SectionGeometry":
+        return cls(
+            name=str(d["name"]),
+            points_um=np.asarray(d["points_um"], dtype=np.float64),
+            diameters_um=np.asarray(d["diameters_um"], dtype=np.float64),
+            nseg=int(d["nseg"]),
+        )
+
+
+def capture_section_geometry(sections) -> list[SectionGeometry]:
+    """Snapshot every section's pt3d polyline, diameters and nseg.
+
+    Call after the cell (and its 3D shape) exist — if a section has no
+    3D points, run ``h.define_shape()`` first. Raises a clear error
+    naming the offending section rather than silently dropping it, so
+    the captured geometry stays aligned 1:1 with the recorded currents.
+    """
+    from neuron import h
+
+    geoms: list[SectionGeometry] = []
+    for sec in sections:
+        n_pt3d = int(h.n3d(sec=sec))
+        if n_pt3d < 2:
+            raise ValueError(
+                f"Section {sec.name()} has {n_pt3d} 3D point(s); need >=2. "
+                f"Call h.define_shape() after building the cell so every "
+                f"section has a pt3d polyline."
+            )
+        pts = np.array(
+            [[h.x3d(i, sec=sec), h.y3d(i, sec=sec), h.z3d(i, sec=sec)]
+             for i in range(n_pt3d)],
+            dtype=np.float64,
+        )
+        diams = np.array(
+            [h.diam3d(i, sec=sec) for i in range(n_pt3d)], dtype=np.float64,
+        )
+        geoms.append(SectionGeometry(
+            name=sec.name(), points_um=pts, diameters_um=diams,
+            nseg=int(sec.nseg),
+        ))
+    return geoms
+
+
+@dataclass
 class _ImemHandles:
-    sections: list
+    sections: list      # kept alive so NEURON doesn't GC the cell mid-run
     p1_um: np.ndarray
     p2_um: np.ndarray
     vec_handles: list   # h.Vector per segment, recording i_membrane_ in nA

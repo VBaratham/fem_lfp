@@ -10,6 +10,12 @@ The user's preference (2026-05-04): when we move to M&S we reuse
 fem_neuron's existing mesh pipeline rather than re-implementing the
 branch fusion, OCC repair flags, polygonal-prism workaround, etc. This
 module is the thin adapter that does that.
+
+Side effect: importing this module locates the sibling ``fem_neuron``
+package and inserts it on ``sys.path`` (see ``_ensure_fem_neuron_on_path``),
+so the import FAILS if fem_neuron can't be found. ``model.py`` imports it
+lazily for exactly this reason — only the branched/body-fitted mesh paths
+pull it in, and ``mesh='cylinder'`` never does.
 """
 from __future__ import annotations
 
@@ -33,10 +39,11 @@ def _ensure_fem_neuron_on_path() -> None:
     if explicit:
         candidates = [Path(explicit).expanduser()]
     else:
+        # Walk up from this file looking for a sibling ``fem_neuron/src``.
+        # Searching (rather than a fixed parents[N]) keeps this working
+        # from nested checkouts — git worktrees, monorepos, etc.
         here = Path(__file__).resolve()
-        candidates = [
-            here.parents[3] / "fem_neuron" / "src",   # default sibling layout
-        ]
+        candidates = [p / "fem_neuron" / "src" for p in here.parents]
     for c in candidates:
         if (c / "fem_neuron" / "__init__.py").is_file():
             if str(c) not in sys.path:

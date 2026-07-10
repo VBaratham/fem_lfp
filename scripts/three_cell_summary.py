@@ -63,7 +63,8 @@ def main() -> None:
     plt.suptitle("fem_lfp: LSA vs ECS-only FEM across three test cells",
                  fontsize=12, y=1.02)
     plt.tight_layout()
-    out = ROOT / "three_cell_summary.png"
+    out = ROOT / "assets" / "three_cell_summary.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"saved {out}")
