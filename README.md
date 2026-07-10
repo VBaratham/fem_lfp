@@ -34,7 +34,8 @@ inside-*and*-outside membrane (EMI) simulation like the companion
 
 **New here?** Jump to [Quickstart](#quickstart) to run it on your own cell,
 or [Bundled scenarios](#bundled-scenarios) to try the worked examples first.
-The [Math](#math) section has the exact equations if you want them.
+The [math appendix](#appendix-the-math) has the exact equations if you want
+them.
 
 ## Install
 
@@ -166,32 +167,6 @@ impractically slow on Hay's L5 PC.
 
 [ams]: https://github.com/AlexMcSD/Alpha_Mesh_Swc
 
-## Math
-
-We solve only in the extracellular space (ECS, the region Ω_e outside the
-cell). The transmembrane current i_mem(x,t) — which NEURON computes from the
-cable equation — enters as a Neumann (prescribed-flux) boundary condition on
-the cell surface Γ_m:
-
-```
-∇·(σ ∇φ_e) = 0        in Ω_e
-σ ∂φ_e/∂n_e = i_mem    on Γ_m    (n_e outward from ECS = into the cell;
-                                   i_mem outward-positive ⇒ current
-                                   flowing INTO the ECS at the membrane)
-φ_e = 0                on Γ_outer (bounding box, Dirichlet far field)
-```
-
-Weak form, per timestep:
-
-```
-∫ σ ∇φ · ∇v dx = Σ_k (I_k(t) / A_k) ∫_{Γ_m,k} v ds
-```
-
-where Γ_m,k is the patch of cell surface owned by NEURON segment k, A_k
-its area, and I_k(t) the per-segment transmembrane current in nA. The
-bilinear form is time-independent — LU-factor once, refactor only when
-geometry changes; per-step cost is RHS reassembly + back-substitution.
-
 ## Validation
 
 **Cylinder (200 µm × 5 µm HH cable):** clean LSA-vs-FEM agreement.
@@ -261,6 +236,32 @@ third_party/
 Run the tests with `pip install -e '.[test]' && pytest` — they cover the
 pure-Python parts (LSA, model helpers, ModelDB fetch) and need neither
 dolfinx nor NEURON.
+
+## Appendix: the math
+
+We solve only in the extracellular space (ECS, the region Ω_e outside the
+cell). The transmembrane current i_mem(x,t) — which NEURON computes from the
+cable equation — enters as a Neumann (prescribed-flux) boundary condition on
+the cell surface Γ_m:
+
+```
+∇·(σ ∇φ_e) = 0        in Ω_e
+σ ∂φ_e/∂n_e = i_mem    on Γ_m    (n_e outward from ECS = into the cell;
+                                   i_mem outward-positive ⇒ current
+                                   flowing INTO the ECS at the membrane)
+φ_e = 0                on Γ_outer (bounding box, Dirichlet far field)
+```
+
+Weak form, per timestep:
+
+```
+∫ σ ∇φ · ∇v dx = Σ_k (I_k(t) / A_k) ∫_{Γ_m,k} v ds
+```
+
+where Γ_m,k is the patch of cell surface owned by NEURON segment k, A_k
+its area, and I_k(t) the per-segment transmembrane current in nA. The
+bilinear form is time-independent — LU-factor once, refactor only when
+geometry changes; per-step cost is RHS reassembly + back-substitution.
 
 ## License
 
