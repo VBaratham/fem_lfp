@@ -73,8 +73,7 @@ from neuron import h
 from fem_lfp import ExtracellularModel
 
 # ... build your cell, set nseg / biophysics / stimulus, then: ...
-h.define_shape()   # only if your sections lack 3D points; a no-op after
-                   # Import3d (.asc/.swc) or explicit h.pt3dadd
+h.define_shape()                      # ensure every section has 3D points
 
 probes_um = np.array([[r, 0.0, 0.0] for r in (20, 50, 100, 400)])
 model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
