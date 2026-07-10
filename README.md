@@ -1,5 +1,7 @@
 # fem_lfp
 
+[![tests](https://github.com/VBaratham/fem_lfp/actions/workflows/tests.yml/badge.svg)](https://github.com/VBaratham/fem_lfp/actions/workflows/tests.yml)
+
 **Turn a NEURON simulation into the extracellular voltage around the cell —
 the signal a nearby electrode would record.**
 
