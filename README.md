@@ -1,45 +1,41 @@
 # fem_lfp
 
-Hybrid LFP simulator. NEURON solves the 1D cable equation for intracellular
-dynamics (V_m, gating, per-segment transmembrane current). A 3D FEM Poisson
-solve in the **extracellular space only** then computes V_e from those
-membrane currents — used as Neumann boundary data on the cell surface.
+**Turn a NEURON simulation into the extracellular voltage around the cell —
+the signal a nearby electrode would record.**
 
-![LSA vs ECS-only FEM across three test cells](assets/three_cell_summary.png)
+When a neuron fires, the currents crossing its membrane spread through the
+surrounding tissue and set up a small voltage there. That voltage is what
+extracellular electrodes pick up: the *local field potential* (LFP, hence
+the name) and the extracellular shape of spikes. `fem_lfp` computes it from
+a NEURON model of the cell.
 
-The aim is to compare against the line-source approximation (LSA) in the
-near and far field, where LSA's infinite-homogeneous-medium assumption
-breaks down (probe geometry, anisotropic σ, finite tissue boundaries).
+The common shortcut for this is the **line-source approximation (LSA)**:
+treat each little piece of the neuron as a line of current sitting in an
+infinite, perfectly uniform medium, and add up a closed-form formula. LSA is
+fast and accurate far from the cell — but its "infinite uniform medium"
+assumption breaks down exactly where geometry matters: close to the
+membrane, near a recording probe, or at a tissue boundary.
 
-This is a middle ground between full self-consistent EMI / KNP-EMI (solved
-inside *and* outside the membrane, e.g. by the companion `fem_neuron`
-project) and the standard LSA postprocessor (analytical line integral in an
-infinite homogeneous medium). Cheaper than EMI; more geometrically faithful
-than LSA.
+`fem_lfp` instead solves the underlying physics directly. It computes the
+voltage in the space *around* the cell (the extracellular space) by solving
+a 3D Poisson equation with the **finite element method (FEM)**, driven by
+the per-segment membrane currents NEURON already gives you. The result is a
+geometry-faithful extracellular voltage at any probe location — and it hands
+you the LSA answer alongside, so you can see where the two diverge.
 
-## Math
+![LSA (line-source) vs the FEM solve at radial probes, for three test cells](assets/three_cell_summary.png)
 
-ECS only. The transmembrane current i_mem(x,t) (computed by NEURON's
-cable equation) enters as a Neumann boundary on the cell surface Γ_m.
+**When to reach for it:** you want extracellular potentials that respect the
+real shape of the cell, the geometry of your probe, or a finite / anisotropic
+slab of tissue — the regime where LSA is known to be off. It's a middle
+ground: more physically faithful than LSA, and far cheaper than a full
+inside-*and*-outside membrane (EMI) simulation like the companion
+[`fem_neuron`][fn] project.
 
-```
-∇·(σ ∇φ_e) = 0        in Ω_e
-σ ∂φ_e/∂n_e = i_mem    on Γ_m    (n_e outward from ECS = into the cell;
-                                   i_mem outward-positive ⇒ current
-                                   flowing INTO the ECS at the membrane)
-φ_e = 0                on Γ_outer (bounding box, Dirichlet far field)
-```
-
-Weak form, per timestep:
-
-```
-∫ σ ∇φ · ∇v dx = Σ_k (I_k(t) / A_k) ∫_{Γ_m,k} v ds
-```
-
-where Γ_m,k is the patch of cell surface owned by NEURON segment k, A_k
-its area, and I_k(t) the per-segment transmembrane current in nA. The
-bilinear form is time-independent — LU-factor once, refactor only when
-geometry changes; per-step cost is RHS reassembly + back-substitution.
+**New here?** Jump to [Quickstart](#quickstart) to run it on your own cell,
+or [Bundled scenarios](#bundled-scenarios) to try the worked examples first.
+The [math appendix](#appendix-the-math) has the exact equations if you want
+them.
 
 ## Install
 
@@ -95,20 +91,55 @@ ExtracellularModel(
     sections, probes_um,
     mesh="auto",        # "cylinder" | "branched" | "body_fitted" | "auto"
     sigma=0.3,          # extracellular conductivity, S/m
-    ecs_pad_um=...,     # how far the tissue box extends past the cell
+    ecs_pad_um=...,     # extracellular padding around the cell (see note below)
     h_membrane_um=...,  # mesh resolution at the membrane
     h_outer_um=...,     # mesh resolution at the box wall
 )
 ```
 
+`ecs_pad_um` sets the size of the tissue block you simulate: the mesh's outer
+box is the cell's bounding box grown outward by this margin (µm) on every
+side. That outer wall is held at V = 0 (the far-field "ground"), so it
+artificially pulls the potential down; a **larger pad pushes the wall
+farther away and reduces that distortion — especially in the far field — at
+the cost of a bigger mesh**. Defaults are tuned per mesher (1500 µm cylinder,
+1000 branched, 4000 body-fitted); grow it if your probes sit far from the
+cell or the far-field V_e looks like it's decaying too fast (see the
+[Validation](#validation) pad-sweep).
+
 `mesh="auto"` picks `cylinder` for a single straight z-cable and
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
-what each mesher does. Only need the analytical reference?
-`model.line_source()` skips the mesh and FEM entirely.
+what each mesher does.
 
 Progress and diagnostics go through the standard `logging` module (logger
 `fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
 library is silent by default.
+
+### LSA only (skip the FEM)
+
+`model.line_source()` returns just the line-source approximation — the fast,
+analytical estimate — with no mesh and no FEM (so it needs no mesher, and no
+`fem_neuron`). Reach for it for a quick look, a parameter sweep, or a
+baseline before the full solve. Same setup as `solve()`: build the model
+before `finitialize`, run, then call it instead.
+
+```python
+model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
+h.finitialize(-65); h.continuerun(30)
+
+lsa = model.line_source()          # ExtracellularResult; no mesh is built
+
+v_e = lsa.v_e_lsa_uV               # (n_time, n_probe) LSA potential in µV
+assert lsa.v_e_fem_uV is None      # no FEM was run
+peak_per_probe = np.abs(v_e).max(axis=0)   # peak |V_e| at each probe
+
+lsa.plot("lsa.png")                # overlay figure (LSA trace only)
+lsa.save("lsa.npz")                # reload later with ExtracellularResult.load
+```
+
+The result is the same `ExtracellularResult` type `solve()` returns, so
+`t_ms`, `probes_um`, `v_m_mV`, `.plot()`, and `.save()` all work — only
+`v_e_fem_uV` is `None`.
 
 ## Bundled scenarios
 
@@ -240,6 +271,32 @@ third_party/
 Run the tests with `pip install -e '.[test]' && pytest` — they cover the
 pure-Python parts (LSA, model helpers, ModelDB fetch) and need neither
 dolfinx nor NEURON.
+
+## Appendix: the math
+
+We solve only in the extracellular space (ECS, the region Ω_e outside the
+cell). The transmembrane current i_mem(x,t) — which NEURON computes from the
+cable equation — enters as a Neumann (prescribed-flux) boundary condition on
+the cell surface Γ_m:
+
+```
+∇·(σ ∇φ_e) = 0        in Ω_e
+σ ∂φ_e/∂n_e = i_mem    on Γ_m    (n_e outward from ECS = into the cell;
+                                   i_mem outward-positive ⇒ current
+                                   flowing INTO the ECS at the membrane)
+φ_e = 0                on Γ_outer (bounding box, Dirichlet far field)
+```
+
+Weak form, per timestep:
+
+```
+∫ σ ∇φ · ∇v dx = Σ_k (I_k(t) / A_k) ∫_{Γ_m,k} v ds
+```
+
+where Γ_m,k is the patch of cell surface owned by NEURON segment k, A_k
+its area, and I_k(t) the per-segment transmembrane current in nA. The
+bilinear form is time-independent — LU-factor once, refactor only when
+geometry changes; per-step cost is RHS reassembly + back-substitution.
 
 ## License
 
