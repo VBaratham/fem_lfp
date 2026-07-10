@@ -1,26 +1,47 @@
 # fem_lfp
 
-Hybrid LFP simulator. NEURON solves the 1D cable equation for intracellular
-dynamics (V_m, gating, per-segment transmembrane current). A 3D FEM Poisson
-solve in the **extracellular space only** then computes V_e from those
-membrane currents — used as Neumann boundary data on the cell surface.
+**Turn a NEURON simulation into the extracellular voltage around the cell —
+the signal a nearby electrode would record.**
 
-![LSA vs ECS-only FEM across three test cells](assets/three_cell_summary.png)
+When a neuron fires, the currents crossing its membrane spread through the
+surrounding tissue and set up a small voltage there. That voltage is what
+extracellular electrodes pick up: the *local field potential* (LFP, hence
+the name) and the extracellular shape of spikes. `fem_lfp` computes it from
+a NEURON model of the cell.
 
-The aim is to compare against the line-source approximation (LSA) in the
-near and far field, where LSA's infinite-homogeneous-medium assumption
-breaks down (probe geometry, anisotropic σ, finite tissue boundaries).
+The common shortcut for this is the **line-source approximation (LSA)**:
+treat each little piece of the neuron as a line of current sitting in an
+infinite, perfectly uniform medium, and add up a closed-form formula. LSA is
+fast and accurate far from the cell — but its "infinite uniform medium"
+assumption breaks down exactly where geometry matters: close to the
+membrane, near a recording probe, or at a tissue boundary.
 
-This is a middle ground between full self-consistent EMI / KNP-EMI (solved
-inside *and* outside the membrane, e.g. by the companion `fem_neuron`
-project) and the standard LSA postprocessor (analytical line integral in an
-infinite homogeneous medium). Cheaper than EMI; more geometrically faithful
-than LSA.
+`fem_lfp` instead solves the underlying physics directly. It computes the
+voltage in the space *around* the cell (the extracellular space) by solving
+a 3D Poisson equation with the **finite element method (FEM)**, driven by
+the per-segment membrane currents NEURON already gives you. The result is a
+geometry-faithful extracellular voltage at any probe location — and it hands
+you the LSA answer alongside, so you can see where the two diverge.
+
+![LSA (line-source) vs the FEM solve at radial probes, for three test cells](assets/three_cell_summary.png)
+
+**When to reach for it:** you want extracellular potentials that respect the
+real shape of the cell, the geometry of your probe, or a finite / anisotropic
+slab of tissue — the regime where LSA is known to be off. It's a middle
+ground: more physically faithful than LSA, and far cheaper than a full
+inside-*and*-outside membrane (EMI) simulation like the companion
+[`fem_neuron`][fn] project.
+
+**New here?** Jump to [Quickstart](#quickstart) to run it on your own cell,
+or [Bundled scenarios](#bundled-scenarios) to try the worked examples first.
+The [Math](#math) section has the exact equations if you want them.
 
 ## Math
 
-ECS only. The transmembrane current i_mem(x,t) (computed by NEURON's
-cable equation) enters as a Neumann boundary on the cell surface Γ_m.
+We solve only in the extracellular space (ECS, the region Ω_e outside the
+cell). The transmembrane current i_mem(x,t) — which NEURON computes from the
+cable equation — enters as a Neumann (prescribed-flux) boundary condition on
+the cell surface Γ_m:
 
 ```
 ∇·(σ ∇φ_e) = 0        in Ω_e
