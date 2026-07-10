@@ -99,9 +99,9 @@ what each mesher does. Only need the analytical reference? `model
 ## Bundled scenarios
 
 Three worked examples, each a `scenario.py` (builds the cell) + a driver
-script (wraps it in an `ExtracellularModel`). **Clone and run** — the two
-reconstruction scenarios download their cell from ModelDB and compile its
-NMODL mechanisms on first run (cached afterward); no manual setup.
+script (wraps it in an `ExtracellularModel`). The reconstruction scenarios
+download their cell from ModelDB and compile its NMODL mechanisms on first
+run (cached afterward) — no manual cell setup.
 
 ```bash
 # 1. Single-cylinder HH cable: clean FEM-vs-LSA demo (fully self-contained)
@@ -110,13 +110,18 @@ python scripts/cylinder_pad_sweep.py    # box-size convergence study
 
 # 2. Mainen & Sejnowski j7 spiny stellate (auto-downloads ModelDB 2488).
 python scripts/ms_j7_compare.py                 # branched mesh (default)
-python scripts/ms_j7_compare.py --body-fitted   # AMS+TetGen, cleaner
+python scripts/ms_j7_compare.py --body-fitted   # AMS+TetGen (see below)
 
 # 3. Hay 2011 BBP-style L5 PC (auto-downloads ModelDB 139653).
-python scripts/bbp_compare.py                   # body-fitted (default)
+python scripts/bbp_compare.py                   # body-fitted — needs AMS setup
+python scripts/bbp_compare.py --branched        # no AMS, but very slow
 ```
 
 Cell downloads land in `scenarios/<name>/cells/` (git-ignored).
+
+Scenarios 1 and 2 are clone-and-run. Scenario 3 (bbp) defaults to the
+body-fitted mesher, which needs a one-time Alpha_Mesh_Swc setup — see
+below.
 
 ### Meshers
 
@@ -126,11 +131,30 @@ Cell downloads land in `scenarios/<name>/cells/` (git-ignored).
   large cells (Hay's 196 sections take 15+ min), which is why bbp defaults to
   body-fitted.
 - **`body_fitted`** — AlphaMeshSwc wraps the whole cell in one watertight
-  surface, then TetGen volume-meshes it. Cleanest for complex morphologies;
-  needs a patched Alpha_Mesh_Swc clone (`bash third_party/ams_patches/apply.sh
-  /path/to/Alpha_Mesh_Swc`, then set `FEM_NEURON_AMS_ROOT` or place it at
-  `~/claude/Alpha_Mesh_Swc`). `mesh="auto"` never picks this, so the default
-  path needs no external mesh tool.
+  surface, then TetGen volume-meshes it. Cleanest for complex morphologies,
+  but needs an external tool (below). `mesh="auto"` never selects it, so the
+  default public-API path needs no external mesh tool.
+
+### Running the body-fitted mesher (bbp, or `--body-fitted`)
+
+The body-fitted path shells out to [Alpha_Mesh_Swc][ams] (AMS), a GPL-3.0
+tool we don't vendor. It needs two small patches for real reconstructions
+(one skips a self-intersection probe that hangs 25+ min on dense cells; one
+fixes AMS ignoring `--min_faces`). One-time setup:
+
+```bash
+git clone https://github.com/AlexMcSD/Alpha_Mesh_Swc ~/Alpha_Mesh_Swc
+bash third_party/ams_patches/apply.sh ~/Alpha_Mesh_Swc
+export FEM_NEURON_AMS_ROOT=~/Alpha_Mesh_Swc      # or place at ~/claude/Alpha_Mesh_Swc
+```
+
+Then `python scripts/bbp_compare.py` just works. See
+[`third_party/ams_patches/README.md`](third_party/ams_patches/README.md)
+for exactly what the patches change and why. If you'd rather avoid AMS
+entirely, `--branched` produces the same result on a small cell but is
+impractically slow on Hay's L5 PC.
+
+[ams]: https://github.com/AlexMcSD/Alpha_Mesh_Swc
 
 ## Validation
 
