@@ -29,6 +29,8 @@ from mpi4py import MPI
 import dolfinx
 import dolfinx.mesh as dmesh
 
+from ._mesh_util import make_parent_to_sub_facet_locator
+
 
 # Add fem_neuron to sys.path on import. The user keeps the two projects
 # as siblings under ~/claude; if their layout differs they can override
@@ -174,52 +176,17 @@ def build_branched_ecs(
     if ecs_cell_idx.size == 0:
         raise RuntimeError("No cells with TAG_ECS in parent mesh.")
 
-    sub, sub_to_parent_cells, *_ = dmesh.create_submesh(
-        parent, tdim, ecs_cell_idx,
-    )
+    sub, *_ = dmesh.create_submesh(parent, tdim, ecs_cell_idx)
     sub.topology.create_connectivity(fdim, tdim)
 
-    # Build a sub-side facet meshtag by walking the parent's tagged
-    # facets and locating each one by VERTEX coordinates on the
-    # submesh. This is robust against the parent → sub facet index
-    # mapping that dolfinx's submesh API exposes only obliquely.
-    parent_tagged = ft_parent.indices
-    parent_tagged_values = ft_parent.values
-    parent.topology.create_connectivity(fdim, 0)
-    p_f_to_v = parent.topology.connectivity(fdim, 0)
-    parent_geom = parent.geometry
-    parent_dofmap = parent_geom.dofmap
-
-    sub.topology.create_connectivity(fdim, 0)
-    s_f_to_v = sub.topology.connectivity(fdim, 0)
-    sub_geom_x = sub.geometry.x
-
-    # Optimization: only the submesh's BOUNDARY facets can match a
-    # parent membrane/outer facet (membrane was an interior facet of
-    # the parent → boundary of the ECS submesh; outer was already
-    # boundary). Restricting the key→idx dict to boundary facets cuts
-    # the work from ~600k all-facets entries to ~50k boundary
-    # entries.
-    sub_boundary_facets = dolfinx.mesh.exterior_facet_indices(sub.topology)
-
-    def _facet_key_from_v(coords3: np.ndarray) -> tuple:
-        # facet's 3 vertex coords → lexicographically-sorted tuple,
-        # rounded to nanometers (1e-9 of mesh unit).
-        coords_q = np.round(coords3, 9)
-        order = np.lexsort(coords_q.T[::-1])
-        return tuple(coords_q[order].flatten())
-
-    sub_key_to_idx: dict[tuple, int] = {}
-    for sf in sub_boundary_facets:
-        verts = s_f_to_v.links(sf)
-        sub_key_to_idx[_facet_key_from_v(sub_geom_x[verts])] = int(sf)
-
+    # Transfer the parent's tagged facets onto the submesh by matching
+    # vertex coordinates. Each facet keeps its parent tag (per-section
+    # membrane, or TAG_OUTER); per-segment splitting happens downstream.
+    locate = make_parent_to_sub_facet_locator(parent, sub)
     sub_indices: list[int] = []
     sub_values: list[int] = []
-    parent_geom_x = parent_geom.x
-    for pf, val in zip(parent_tagged, parent_tagged_values):
-        verts = p_f_to_v.links(pf)
-        sf = sub_key_to_idx.get(_facet_key_from_v(parent_geom_x[verts]))
+    for pf, val in zip(ft_parent.indices, ft_parent.values):
+        sf = locate(pf)
         if sf is None:
             continue
         sub_indices.append(sf)

@@ -11,8 +11,16 @@ Public interface::
 
 See :class:`ExtracellularModel` for the knobs (mesher, conductivity, mesh
 sizing). Everything else in the package is machinery the model drives.
+
+Progress/diagnostic output goes through the standard ``logging`` module
+(logger name ``fem_lfp``); call ``logging.basicConfig(level=logging.INFO)``
+to see it. The library attaches a NullHandler so it stays silent by default.
 """
+import logging as _logging
+
 __version__ = "0.0.1"
+
+_logging.getLogger(__name__).addHandler(_logging.NullHandler())
 
 from .lsa import line_source_v_e
 from .model import MESHERS, ExtracellularModel, ExtracellularResult

@@ -15,9 +15,14 @@ fem_neuron/_validation/line_source.py for the bug history on this.)
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
+
+from ._geom import point_at_arc_fraction
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,28 +54,13 @@ def _segment_endpoints_um(sec) -> tuple[np.ndarray, np.ndarray]:
          for i in range(n_pt3d)],
         dtype=np.float64,
     )
-    deltas = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-    arc = np.concatenate([[0.0], np.cumsum(deltas)])
-    L = arc[-1] if arc[-1] > 0 else 1.0
-    arc_norm = arc / L
-
     nseg = int(sec.nseg)
     p1 = np.zeros((nseg, 3))
     p2 = np.zeros((nseg, 3))
     for k in range(nseg):
-        p1[k] = _interp_pt(arc_norm, pts, k / nseg)
-        p2[k] = _interp_pt(arc_norm, pts, (k + 1) / nseg)
+        p1[k] = point_at_arc_fraction(pts, k / nseg)
+        p2[k] = point_at_arc_fraction(pts, (k + 1) / nseg)
     return p1, p2
-
-
-def _interp_pt(arc_norm: np.ndarray, pts: np.ndarray, x: float) -> np.ndarray:
-    if x <= arc_norm[0]:
-        return pts[0]
-    if x >= arc_norm[-1]:
-        return pts[-1]
-    j = int(np.searchsorted(arc_norm, x))
-    a = (x - arc_norm[j - 1]) / (arc_norm[j] - arc_norm[j - 1])
-    return (1 - a) * pts[j - 1] + a * pts[j]
 
 
 @dataclass
@@ -281,75 +271,7 @@ def export_swc_from_neuron(
         for r in rows:
             f.write(f"{r[0]} {r[1]} {r[2]:.4f} {r[3]:.4f} {r[4]:.4f} "
                     f"{r[5]:.4f} {r[6]}\n")
-    print(f"[swc export] {len(rows)} pt3d points → {out_path}")
-
-
-def per_segment_polylines_um(
-    points_um: np.ndarray,
-    diameters_um: np.ndarray,
-    nseg: int,
-) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Slice a section's pt3d polyline into ``nseg`` equal-arc-length pieces.
-
-    Returns a list of length ``nseg``, each entry ``(pts2, diams2)`` —
-    the simplified 2-point polyline (first and last pt3d) of that
-    NEURON segment plus its corresponding diameters at those points,
-    linearly interpolated along arc length.
-
-    Used by the M&S / BBP scenarios to give the FEM mesher one
-    primitive per NEURON segment instead of one per section, so each
-    NEURON segment owns its own unique facet tag — no
-    polyline-simplification dropping segments at the per-section bin
-    level.
-    """
-    if nseg <= 0:
-        raise ValueError(f"nseg must be positive, got {nseg}")
-    pts = np.asarray(points_um, dtype=np.float64)
-    diams = np.asarray(diameters_um, dtype=np.float64)
-    if pts.shape[0] < 2:
-        raise ValueError("need at least 2 pt3d points")
-    if pts.shape[0] != diams.shape[0]:
-        raise ValueError(
-            f"pts {pts.shape} and diams {diams.shape} length mismatch"
-        )
-    # cumulative arc length along the full polyline
-    seg_lens = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-    arc = np.concatenate([[0.0], np.cumsum(seg_lens)])
-    L = arc[-1]
-    if L <= 0:
-        # degenerate (zero-length) section: return nseg copies of the
-        # single point with epsilon offset so the mesher doesn't choke
-        # on zero-length primitives later.
-        pts_dup = np.array([pts[0], pts[0] + 1e-3], dtype=np.float64)
-        diams_dup = np.array([diams[0], diams[0]], dtype=np.float64)
-        return [(pts_dup.copy(), diams_dup.copy()) for _ in range(nseg)]
-
-    def interp(target_arc: float) -> tuple[np.ndarray, float]:
-        # find the segment index in the polyline where target_arc falls
-        idx = int(np.searchsorted(arc, target_arc))
-        if idx <= 0:
-            return pts[0], float(diams[0])
-        if idx >= pts.shape[0]:
-            return pts[-1], float(diams[-1])
-        a = (target_arc - arc[idx - 1]) / max(seg_lens[idx - 1], 1e-30)
-        a = float(np.clip(a, 0.0, 1.0))
-        p = (1.0 - a) * pts[idx - 1] + a * pts[idx]
-        d = (1.0 - a) * diams[idx - 1] + a * diams[idx]
-        return p, float(d)
-
-    out = []
-    for k in range(nseg):
-        a0 = (k / nseg) * L
-        a1 = ((k + 1) / nseg) * L
-        p0, d0 = interp(a0)
-        p1, d1 = interp(a1)
-        if np.allclose(p0, p1):
-            # zero-length sub-segment (all NEURON pt3d at one location)
-            p1 = p0 + np.array([1e-3, 0.0, 0.0])
-        out.append(
-            (np.vstack([p0, p1]), np.array([d0, d1], dtype=np.float64))
-        )
-    return out
+    logger.info(f"[swc export] {len(rows)} pt3d points → {out_path}")
 
 
 def finalize_run(

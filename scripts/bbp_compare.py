@@ -16,6 +16,7 @@ Body-fitted needs a patched Alpha_Mesh_Swc clone; see third_party/.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCEN_DIR = ROOT / "scenarios" / "bbp"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(SCEN_DIR))
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def run_full(mesh: str = "body_fitted") -> None:

@@ -12,12 +12,15 @@ Stdlib only (urllib + zipfile + subprocess); no new dependencies.
 from __future__ import annotations
 
 import io
+import logging
 import shutil
 import subprocess
 import sys
 import urllib.request
 import zipfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 MODELDB_DOWNLOAD = "https://modeldb.science/download/{id}"
 
@@ -44,7 +47,7 @@ def compile_mods(mod_dir: Path) -> Path:
         raise RuntimeError(
             "nrnivmodl not on PATH — activate the NEURON/conda env first."
         )
-    print(f"[modeldb] compiling NMODL mechanisms in {mod_dir} …")
+    logger.info(f"[modeldb] compiling NMODL mechanisms in {mod_dir} …")
     res = subprocess.run(["nrnivmodl"], cwd=str(mod_dir), text=True,
                          capture_output=True)
     if res.returncode != 0 or not _arch_is_built(mod_dir):
@@ -66,10 +69,10 @@ def fetch(model_id: int, target_dir: Path, *, inner: str) -> Path:
     if target_dir.exists():
         return target_dir
     url = MODELDB_DOWNLOAD.format(id=model_id)
-    print(f"[modeldb] downloading ModelDB {model_id} from {url} …")
+    logger.info(f"[modeldb] downloading ModelDB {model_id} from {url} …")
     with urllib.request.urlopen(url) as resp:   # noqa: S310 (trusted host)
         data = resp.read()
-    print(f"[modeldb]   {len(data) / 1024:.0f} KiB; extracting …")
+    logger.info(f"[modeldb]   {len(data) / 1024:.0f} KiB; extracting …")
     tmp = target_dir.parent / f"_modeldb_{model_id}_tmp"
     if tmp.exists():
         shutil.rmtree(tmp)
@@ -88,7 +91,7 @@ def fetch(model_id: int, target_dir: Path, *, inner: str) -> Path:
         shutil.move(str(src), str(target_dir))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"[modeldb]   → {target_dir}")
+    logger.info(f"[modeldb]   → {target_dir}")
     return target_dir
 
 

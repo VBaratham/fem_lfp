@@ -15,6 +15,7 @@ lets us use mm-scale boxes for far-field probes without exploding DOFs.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
@@ -25,6 +26,7 @@ from mpi4py import MPI
 import dolfinx
 import gmsh
 
+logger = logging.getLogger(__name__)
 
 TAG_ECS = 1
 TAG_OUTER = 2
@@ -206,7 +208,7 @@ def build_cylinder_ecs_mesh(
         far_str = (
             f" → {spec.h_far_um}µm" if spec.h_far_um is not None else ""
         )
-        print(
+        logger.info(
             f"[cylinder_ecs] L={spec.L_um}µm r={spec.radius_um}µm "
             f"pad={spec.ecs_pad_um}µm  "
             f"h={spec.h_membrane_um}→{spec.h_outer_um}{far_str} µm  →  "

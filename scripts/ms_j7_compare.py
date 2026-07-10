@@ -12,6 +12,7 @@ and computes the LSA reference.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCEN_DIR = ROOT / "scenarios" / "ms_j7"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(SCEN_DIR))
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def run_full(body_fitted: bool = False) -> None:
