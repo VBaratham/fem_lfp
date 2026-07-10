@@ -43,15 +43,23 @@ geometry changes; per-step cost is RHS reassembly + back-substitution.
 
 ## Install
 
+fem_lfp needs FEniCSx (dolfinx), gmsh, and NEURON. These don't co-install
+cleanly from PyPI, so the simplest route is conda-forge:
+
 ```bash
-conda activate fem_neuron-env   # reuse the fem_neuron environment
+conda create -n fem_lfp -c conda-forge fenics-dolfinx gmsh python=3.12
+conda activate fem_lfp
+pip install neuron        # or a platform-appropriate NEURON build
 pip install -e .
 ```
 
-`dolfinx`, `gmsh`, and `neuron` come from the conda env. The `cylinder`
-mesher is self-contained; the `branched` and `body_fitted` meshers
-additionally need the sibling `fem_neuron` package (and, for
-`body_fitted`, a patched Alpha_Mesh_Swc — see `third_party/`).
+That's everything the `cylinder` mesher needs. The `branched` and
+`body_fitted` meshers additionally require [`fem_neuron`][fn] — a rough
+companion research project — placed next to this repo or pointed to by
+`FEM_LFP_FEM_NEURON_SRC`. `body_fitted` also needs a patched Alpha_Mesh_Swc
+(see the body-fitted section below and `third_party/ams_patches/`).
+
+[fn]: https://github.com/VBaratham/fem_neuron
 
 ## Quickstart
 
@@ -65,7 +73,8 @@ from neuron import h
 from fem_lfp import ExtracellularModel
 
 # ... build your cell, set nseg / biophysics / stimulus, then: ...
-h.define_shape()                      # ensure every section has 3D points
+h.define_shape()   # only if your sections lack 3D points; a no-op after
+                   # Import3d (.asc/.swc) or explicit h.pt3dadd
 
 probes_um = np.array([[r, 0.0, 0.0] for r in (20, 50, 100, 400)])
 model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
@@ -95,8 +104,12 @@ ExtracellularModel(
 
 `mesh="auto"` picks `cylinder` for a single straight z-cable and
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
-what each mesher does. Only need the analytical reference? `model
-.line_source()` skips the mesh and FEM entirely.
+what each mesher does. Only need the analytical reference?
+`model.line_source()` skips the mesh and FEM entirely.
+
+Progress and diagnostics go through the standard `logging` module (logger
+`fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
+library is silent by default.
 
 ## Bundled scenarios
 
@@ -121,9 +134,10 @@ python scripts/bbp_compare.py --branched        # no AMS, but very slow
 
 Cell downloads land in `scenarios/<name>/cells/` (git-ignored).
 
-Scenarios 1 and 2 are clone-and-run. Scenario 3 (bbp) defaults to the
-body-fitted mesher, which needs a one-time Alpha_Mesh_Swc setup — see
-below.
+Scenario 1 (cylinder) is fully standalone. Scenarios 2 and 3 auto-download
+their cell data, but their meshers need [`fem_neuron`][fn] installed
+(scenario 3's default body-fitted mesher additionally needs the one-time
+Alpha_Mesh_Swc setup below).
 
 ### Meshers
 
@@ -227,3 +241,10 @@ third_party/
 Run the tests with `pip install -e '.[test]' && pytest` — they cover the
 pure-Python parts (LSA, model helpers, ModelDB fetch) and need neither
 dolfinx nor NEURON.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The optional `body_fitted` mesher shells out
+to Alpha_Mesh_Swc (GPL-3.0) as an external tool; it isn't vendored, so it
+doesn't affect fem_lfp's license. The example cells are fetched from
+ModelDB under ModelDB's terms, not redistributed here.
