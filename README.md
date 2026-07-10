@@ -91,11 +91,21 @@ ExtracellularModel(
     sections, probes_um,
     mesh="auto",        # "cylinder" | "branched" | "body_fitted" | "auto"
     sigma=0.3,          # extracellular conductivity, S/m
-    ecs_pad_um=...,     # how far the tissue box extends past the cell
+    ecs_pad_um=...,     # extracellular padding around the cell (see note below)
     h_membrane_um=...,  # mesh resolution at the membrane
     h_outer_um=...,     # mesh resolution at the box wall
 )
 ```
+
+`ecs_pad_um` sets the size of the tissue block you simulate: the mesh's outer
+box is the cell's bounding box grown outward by this margin (µm) on every
+side. That outer wall is held at V = 0 (the far-field "ground"), so it
+artificially pulls the potential down; a **larger pad pushes the wall
+farther away and reduces that distortion — especially in the far field — at
+the cost of a bigger mesh**. Defaults are tuned per mesher (1500 µm cylinder,
+1000 branched, 4000 body-fitted); grow it if your probes sit far from the
+cell or the far-field V_e looks like it's decaying too fast (see the
+[Validation](#validation) pad-sweep).
 
 `mesh="auto"` picks `cylinder` for a single straight z-cable and
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
