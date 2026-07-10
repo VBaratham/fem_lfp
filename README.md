@@ -5,13 +5,15 @@ dynamics (V_m, gating, per-segment transmembrane current). A 3D FEM Poisson
 solve in the **extracellular space only** then computes V_e from those
 membrane currents — used as Neumann boundary data on the cell surface.
 
+![LSA vs ECS-only FEM across three test cells](assets/three_cell_summary.png)
+
 The aim is to compare against the line-source approximation (LSA) in the
 near and far field, where LSA's infinite-homogeneous-medium assumption
 breaks down (probe geometry, anisotropic σ, finite tissue boundaries).
 
-This is a middle ground between
-[fem_neuron](../fem_neuron) (full self-consistent EMI / KNP-EMI inside +
-outside) and the standard LSA postprocessor (analytical line integral in
+This is a middle ground between full self-consistent EMI / KNP-EMI (solved
+inside *and* outside the membrane, e.g. by the companion `fem_neuron`
+project) and the standard LSA postprocessor (analytical line integral in an
 infinite homogeneous medium). Cheaper than EMI; more geometrically faithful
 than LSA.
 
@@ -206,21 +208,22 @@ src/fem_lfp/
                      # CableSegmentation + BranchedSegmentation; cell-wide
                      # redirect of empty-bin currents to nearest non-empty
                      # 3D segment center
-scenarios/
-  cylinder/scenario.py
-  ms_j7/scenario.py
-  bbp/scenario.py    # Hay et al. 2011 L5 PC, ModelDB 139653
-scripts/
-  cylinder_compare.py
-  cylinder_pad_sweep.py
-  ms_j7_compare.py
-  ms_j7_diagnostic.py        # single-source / uniform-source / actual-i_mem
-  ms_j7_lsa_simplified.py    # LSA full vs LSA simplified vs FEM
-  bbp_compare.py
+  modeldb.py         # download + compile ModelDB cells on demand (stdlib)
+scenarios/           # example cells: <name>/scenario.py builds the cell
+  cylinder/  ms_j7/  bbp/
+scripts/             # driver CLIs that wrap a scenario in ExtracellularModel
+  cylinder_compare.py  cylinder_pad_sweep.py
+  ms_j7_compare.py     bbp_compare.py
+  three_cell_summary.py
+  diagnostics/       # dev/validation scripts, not part of the examples
+tests/               # numpy-only unit tests (no dolfinx/neuron needed)
+assets/              # figures used in the docs
 third_party/
-  Alpha_Mesh_Swc_patched/    # local AMS clone with two patches:
-                             # (1) skip TetGen self-intersection probe
-                             #     (was hanging 25+ min on j7 alpha-wrap)
-                             # (2) honor user --min_faces (upstream
-                             #     silently overrode it with dfaces/2)
+  ams_patches/       # two diffs for Alpha_Mesh_Swc (see its README):
+                     # (1) skip a TetGen self-intersection probe that hangs
+                     # (2) honor --min_faces (upstream ignored it)
 ```
+
+Run the tests with `pip install -e '.[test]' && pytest` — they cover the
+pure-Python parts (LSA, model helpers, ModelDB fetch) and need neither
+dolfinx nor NEURON.

@@ -133,7 +133,7 @@ def capture_section_geometry(sections) -> list[SectionGeometry]:
 
 @dataclass
 class _ImemHandles:
-    sections: list
+    sections: list      # kept alive so NEURON doesn't GC the cell mid-run
     p1_um: np.ndarray
     p2_um: np.ndarray
     vec_handles: list   # h.Vector per segment, recording i_membrane_ in nA

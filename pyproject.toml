@@ -10,12 +10,27 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "fem_lfp contributors" }]
 license = { text = "MIT" }
+keywords = ["neuroscience", "LFP", "NEURON", "FEM", "extracellular", "dolfinx"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
-    # dolfinx + gmsh + neuron come from the conda env (fem_neuron-env)
+    # dolfinx + gmsh + neuron come from the conda env (fem_neuron-env);
+    # they are not pip-installable here and so are not listed as deps.
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

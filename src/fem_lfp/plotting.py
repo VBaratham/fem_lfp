@@ -88,7 +88,7 @@ def overlay_fem_vs_lsa(
     ax_radial.grid(alpha=0.3, which="both")
 
     if title is None:
-        title = f"Extracellular potential — FEM vs LSA ({result.mesh} mesh)"
+        title = f"Extracellular potential — FEM vs LSA ({result.mesher} mesh)"
     plt.suptitle(title, y=0.995, fontsize=12)
     plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -99,9 +99,10 @@ def overlay_fem_vs_lsa(
         print(f"  {'r (µm)':>8}  {'LSA (µV)':>10}  {'FEM (µV)':>10}  "
               f"{'FEM/LSA':>8}")
         for idx in order:
-            l = v_lsa[snap_idx, idx]
-            f = v_fem[snap_idx, idx]
-            ratio = f / l if abs(l) > 1e-3 else float("nan")
-            print(f"  {radii[idx]:8.1f}  {l:10.3f}  {f:10.3f}  {ratio:8.3f}")
+            lsa_val = v_lsa[snap_idx, idx]
+            fem_val = v_fem[snap_idx, idx]
+            ratio = fem_val / lsa_val if abs(lsa_val) > 1e-3 else float("nan")
+            print(f"  {radii[idx]:8.1f}  {lsa_val:10.3f}  {fem_val:10.3f}  "
+                  f"{ratio:8.3f}")
     print(f"saved {out_path}")
     return out_path

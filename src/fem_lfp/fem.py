@@ -481,7 +481,8 @@ def run_fem_lfp(
     """Convenience driver: build solver, step through time, return V_e at
     probes.
 
-    Returns V_e_uV with shape (T, P) (matches the runner's convention).
+    ``imem_nA`` is (S, T); the returned V_e is in microvolts, shape
+    (T, P) = (timesteps, probes).
     """
     solver = EcsPoissonSolver(
         mesh, facet_tags, seg,

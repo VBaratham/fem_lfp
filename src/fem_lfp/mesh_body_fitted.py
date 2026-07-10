@@ -23,6 +23,12 @@ License note: AMS is GPL-3.0. fem_neuron treats it as an external
 optional CLI; we follow the same convention. Set
 ``FEM_NEURON_AMS_ROOT`` if AMS isn't at one of the default sibling
 paths.
+
+Implementation note: to inject our two AMS fixes (and a soma-anchored
+interior point) without forking fem_neuron, ``build_body_fitted_ecs``
+temporarily monkeypatches a couple of ``fem_neuron.mesh.body_fitted``
+internals for the duration of the call, then restores them. See the
+comments there.
 """
 from __future__ import annotations
 
@@ -306,7 +312,7 @@ def build_body_fitted_ecs(
     if section_diameters_um is not None:
         diameters = [np.asarray(d, dtype=np.float64) for d in section_diameters_um]
     else:
-        # Fall back to a uniform 1 µm radius for every polyline point —
+        # Fall back to a uniform 2 µm diameter for every polyline point —
         # equivalent to the old polyline-only classifier.
         diameters = [np.full(p.shape[0], 2.0) for p in polylines_um]
     sec_assigned = _classify_facets_to_sections(

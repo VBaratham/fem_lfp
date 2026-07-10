@@ -10,6 +10,12 @@ The user's preference (2026-05-04): when we move to M&S we reuse
 fem_neuron's existing mesh pipeline rather than re-implementing the
 branch fusion, OCC repair flags, polygonal-prism workaround, etc. This
 module is the thin adapter that does that.
+
+Side effect: importing this module locates the sibling ``fem_neuron``
+package and inserts it on ``sys.path`` (see ``_ensure_fem_neuron_on_path``),
+so the import FAILS if fem_neuron can't be found. ``model.py`` imports it
+lazily for exactly this reason — only the branched/body-fitted mesh paths
+pull it in, and ``mesh='cylinder'`` never does.
 """
 from __future__ import annotations
 

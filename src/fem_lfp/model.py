@@ -118,7 +118,7 @@ class ExtracellularResult:
     p1_um: np.ndarray                      # (S, 3) segment proximal ends
     p2_um: np.ndarray                      # (S, 3) segment distal ends
     v_m_mV: dict[str, np.ndarray]          # label -> (T,)
-    mesh: str                              # mesher actually used
+    mesher: str                            # name of the mesher that ran
     mesh_path: str | None                  # written .xdmf, if any
     timings_s: dict[str, float] = field(default_factory=dict)
 
@@ -139,7 +139,7 @@ class ExtracellularResult:
                         else np.array([])),
             imem_nA=self.imem_nA,
             p1_um=self.p1_um, p2_um=self.p2_um,
-            mesh=self.mesh,
+            mesher=self.mesher,
             **{f"vm_{k}": v for k, v in self.v_m_mV.items()},
         )
         return path
@@ -164,7 +164,7 @@ class ExtracellularResult:
             v_e_fem_uV=_or_none("v_e_fem_uV"),
             v_e_lsa_uV=_or_none("v_e_lsa_uV"),
             imem_nA=z["imem_nA"], p1_um=z["p1_um"], p2_um=z["p2_um"],
-            v_m_mV=v_m, mesh=str(z["mesh"]), mesh_path=None,
+            v_m_mV=v_m, mesher=str(z["mesher"]), mesh_path=None,
         )
 
 
@@ -268,7 +268,10 @@ class ExtracellularModel:
         self.sections = list(sections) if sections is not None else []
         self.probes_um = _as_probe_array(probes_um)
         if mesh not in ("auto", *MESHERS):
-            raise ValueError(f"unknown mesh={mesh!r}")
+            raise ValueError(
+                f"unknown mesh={mesh!r}; choose 'auto' or one of "
+                + ", ".join(f"{k!r}" for k in MESHERS)
+            )
         self.mesh_request = mesh
         self.sigma = float(sigma)
         self.mesh_kwargs = dict(mesh_kwargs)
@@ -316,6 +319,7 @@ class ExtracellularModel:
 
     @property
     def n_seg(self) -> int:
+        """Total NEURON compartments across all sections (= imem row count)."""
         return sum(g.nseg for g in self._geoms)
 
     def resolve_mesh(self) -> str:
@@ -402,7 +406,7 @@ class ExtracellularModel:
             imem_nA=nrun.imem_nA,
             p1_um=nrun.p1_um, p2_um=nrun.p2_um,
             v_m_mV=dict(nrun.rec_v_mV),
-            mesh=mesher,
+            mesher=mesher,
             mesh_path=str(mesh_path) if mesh_path is not None else None,
             timings_s=timings,
         )
@@ -424,7 +428,7 @@ class ExtracellularModel:
             t_ms=nrun.t_ms, probes_um=self.probes_um,
             v_e_fem_uV=None, v_e_lsa_uV=v_e_lsa_uV,
             imem_nA=nrun.imem_nA, p1_um=nrun.p1_um, p2_um=nrun.p2_um,
-            v_m_mV=dict(nrun.rec_v_mV), mesh="none", mesh_path=None,
+            v_m_mV=dict(nrun.rec_v_mV), mesher="none", mesh_path=None,
         )
 
     # -------------------------------------------------------------------- #
