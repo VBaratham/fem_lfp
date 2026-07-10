@@ -111,7 +111,28 @@ cell or the far-field V_e looks like it's decaying too fast (see the
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
 what each mesher does. Only need the LSA — the fast, analytical
 line-source approximation? `model.line_source()` returns just that,
-skipping the mesh and FEM entirely.
+skipping the mesh and FEM entirely (and needing no mesher / fem_neuron).
+It's handy for a quick estimate, a parameter sweep, or a sanity baseline
+before the full solve. Same setup as `solve()` — build the model before
+`finitialize`, run, then call it instead:
+
+```python
+model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
+h.finitialize(-65); h.continuerun(30)
+
+lsa = model.line_source()          # ExtracellularResult; no mesh is built
+
+v_e = lsa.v_e_lsa_uV               # (n_time, n_probe) LSA potential in µV
+assert lsa.v_e_fem_uV is None      # no FEM was run
+peak_per_probe = np.abs(v_e).max(axis=0)   # e.g. spike amplitude at each probe
+
+lsa.plot("lsa.png")                # overlay figure (LSA trace only)
+lsa.save("lsa.npz")                # reload later with ExtracellularResult.load
+```
+
+The returned `ExtracellularResult` is the same type `solve()` gives you, so
+`t_ms`, `probes_um`, `v_m_mV`, `.plot()`, and `.save()` all work — only
+`v_e_fem_uV` is `None`.
 
 Progress and diagnostics go through the standard `logging` module (logger
 `fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
