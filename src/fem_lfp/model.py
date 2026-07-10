@@ -533,7 +533,6 @@ class ExtracellularModel:
         bex = build_body_fitted_ecs(
             swc_path=swc_path,
             section_polylines_um=[g.points_um for g in self._geoms],
-            section_diameters_um=[g.diameters_um for g in self._geoms],
             section_nseg=section_nseg,
             out_stem=stem,
             ics_anchor_um=anchor,

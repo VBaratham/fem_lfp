@@ -19,6 +19,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCEN_DIR = ROOT / "scenarios" / "cylinder"
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(SCEN_DIR))
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def run_full(

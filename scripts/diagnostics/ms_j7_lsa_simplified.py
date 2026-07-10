@@ -18,6 +18,7 @@ real FEM-vs-LSA-on-same-geometry gap (boundary effects, etc.).
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ import matplotlib.pyplot as plt
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scenarios" / "ms_j7"))
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def main() -> None:

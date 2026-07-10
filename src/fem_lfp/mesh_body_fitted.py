@@ -32,6 +32,7 @@ comments there.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,7 +43,10 @@ from mpi4py import MPI
 import dolfinx
 import dolfinx.mesh as dmesh
 
+from ._mesh_util import make_parent_to_sub_facet_locator
 from .mesh_branched import _ensure_fem_neuron_on_path
+
+logger = logging.getLogger(__name__)
 
 _ensure_fem_neuron_on_path()
 
@@ -139,7 +143,7 @@ def _patched_run_ams_factory(min_faces):
             cmd += ["--alpha", str(alpha_fraction)]
         if min_faces is not None:
             cmd += ["--min_faces", str(int(min_faces))]
-        print(f"[body_fitted] AMS: {' '.join(cmd)} (cwd={ams_root})")
+        logger.info(f"[body_fitted] AMS: {' '.join(cmd)} (cwd={ams_root})")
         res = subprocess.run(cmd, cwd=str(ams_root),
                              capture_output=True, text=True)
         if res.returncode != 0:
@@ -164,7 +168,6 @@ def build_body_fitted_ecs(
     section_nseg: list[int],
     out_stem: Path | str,
     *,
-    section_diameters_um: list[np.ndarray] | None = None,
     ecs_pad_um: float = 4000.0,
     h_outer_um: float = 200.0,
     alpha_fraction: float | None = None,
@@ -216,7 +219,7 @@ def build_body_fitted_ecs(
     target_h5 = out_stem.parent / f"{out_stem.name}.h5"
     if cache_xdmf.is_file() and cache_h5.is_file():
         import shutil
-        print(f"[body_fitted cache HIT] {cache_xdmf} → {target_xdmf}")
+        logger.info(f"[body_fitted cache HIT] {cache_xdmf} → {target_xdmf}")
         shutil.copyfile(cache_xdmf, target_xdmf)
         shutil.copyfile(cache_h5, target_h5)
     else:
@@ -244,7 +247,7 @@ def build_body_fitted_ecs(
         import shutil
         shutil.copyfile(target_xdmf, cache_xdmf)
         shutil.copyfile(target_h5, cache_h5)
-        print(f"[body_fitted cache STORE] {target_xdmf} → {cache_xdmf}")
+        logger.info(f"[body_fitted cache STORE] {target_xdmf} → {cache_xdmf}")
 
     xdmf = out_stem.with_suffix(".xdmf")
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD, xdmf, "r") as f:
@@ -261,36 +264,17 @@ def build_body_fitted_ecs(
     if ecs_cells.size == 0:
         raise RuntimeError("No TAG_ECS cells in parent mesh.")
 
-    sub, sub_to_parent_cells, *_ = dmesh.create_submesh(parent, tdim, ecs_cells)
+    sub, *_ = dmesh.create_submesh(parent, tdim, ecs_cells)
     sub.topology.create_connectivity(fdim, tdim)
-    sub.topology.create_connectivity(fdim, 0)
-    parent.topology.create_connectivity(fdim, 0)
 
-    # ----- transfer outer + bulk-membrane facet tags from parent → sub -----
-    sub_bndry = dmesh.exterior_facet_indices(sub.topology)
-    s_f_to_v = sub.topology.connectivity(fdim, 0)
-    p_f_to_v = parent.topology.connectivity(fdim, 0)
-    sub_x = sub.geometry.x
-    parent_x = parent.geometry.x
-
-    def _facet_key(coords3: np.ndarray) -> tuple:
-        cq = np.round(coords3, 9)
-        order = np.lexsort(cq.T[::-1])
-        return tuple(cq[order].flatten())
-
-    sub_key_to_idx: dict[tuple, int] = {}
-    for sf in sub_bndry:
-        verts = s_f_to_v.links(sf)
-        sub_key_to_idx[_facet_key(sub_x[verts])] = int(sf)
-
-    # parent's ft has TAG_MEMBRANE for the cell surface and TAG_OUTER for
-    # the box. We want to keep TAG_OUTER on the submesh as-is, and
-    # RECLASSIFY TAG_MEMBRANE facets per-section below.
+    # ----- transfer facet tags from parent → sub -----
+    # Keep TAG_OUTER as-is; collect the TAG_MEMBRANE facets to RECLASSIFY
+    # per-section below. Match by vertex coordinates.
+    locate = make_parent_to_sub_facet_locator(parent, sub)
     sub_outer_idx: list[int] = []
     parent_membrane_subfacets: list[int] = []   # sub-facet indices
     for pf, val in zip(ft_parent.indices, ft_parent.values):
-        verts = p_f_to_v.links(pf)
-        sf = sub_key_to_idx.get(_facet_key(parent_x[verts]))
+        sf = locate(pf)
         if sf is None:
             continue
         if int(val) == TAG_OUTER:
@@ -309,15 +293,7 @@ def build_body_fitted_ecs(
     )
 
     polylines_um = [np.asarray(p, dtype=np.float64) for p in section_polylines_um]
-    if section_diameters_um is not None:
-        diameters = [np.asarray(d, dtype=np.float64) for d in section_diameters_um]
-    else:
-        # Fall back to a uniform 2 µm diameter for every polyline point —
-        # equivalent to the old polyline-only classifier.
-        diameters = [np.full(p.shape[0], 2.0) for p in polylines_um]
-    sec_assigned = _classify_facets_to_sections(
-        mem_centroids_um, polylines_um, diameters,
-    )
+    sec_assigned = _classify_facets_to_sections(mem_centroids_um, polylines_um)
 
     sub_indices: list[int] = sub_outer_idx[:]
     sub_values: list[int] = [TAG_OUTER] * len(sub_outer_idx)
@@ -335,7 +311,7 @@ def build_body_fitted_ecs(
 
     n_outer = len(sub_outer_idx)
     n_mem = len(parent_membrane_subfacets)
-    print(f"[body_fitted_ecs] submesh: {sub.topology.index_map(tdim).size_local}"
+    logger.info(f"[body_fitted_ecs] submesh: {sub.topology.index_map(tdim).size_local}"
           f" cells; outer={n_outer}, membrane={n_mem} facets across "
           f"{len(polylines_um)} sections")
 
@@ -350,16 +326,15 @@ def build_body_fitted_ecs(
 def _classify_facets_to_sections(
     centroids_um: np.ndarray,
     polylines_um: list[np.ndarray],
-    diameters_um: list[np.ndarray],   # accepted for API compat; unused for now
 ) -> np.ndarray:
     """Assign each facet centroid to the closest section's polyline.
 
-    We tried a radius-aware metric (``|distance − r_section|``) to fix
-    the soma-vs-hillock attribution problem, but it produced
-    drastically WORSE results — many membrane facets ended up
-    assigned to thin distal sections whose local radius coincidentally
-    matched the alpha-wrap-vs-polyline distance better than the
-    physically-correct fat section. Reverted.
+    We tried a radius-aware metric (``|distance − r_section|``, using
+    per-section diameters) to fix the soma-vs-hillock attribution
+    problem, but it produced drastically WORSE results — many membrane
+    facets ended up assigned to thin distal sections whose local radius
+    coincidentally matched the alpha-wrap-vs-polyline distance better
+    than the physically-correct fat section. Reverted to distance-only.
 
     For now: closest-polyline classifier. The hillock-attribution
     issue manifests as ~3 empty bins on j7, handled downstream by

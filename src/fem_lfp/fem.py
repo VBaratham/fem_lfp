@@ -19,6 +19,7 @@ micrometers to meters once at construction time.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -30,6 +31,9 @@ import dolfinx.fem.petsc as fem_petsc
 import ufl
 from dolfinx import fem, geometry
 
+from ._geom import arc_fraction_of_projection, point_at_arc_fraction
+
+logger = logging.getLogger(__name__)
 
 SEG_TAG_OFFSET = 1000  # membrane facet tags become SEG_TAG_OFFSET + seg_idx
 
@@ -56,58 +60,6 @@ class CableSegmentation:
         norm = (z + L_m / 2.0) / L_m  # 0..1
         idx = np.floor(norm * self.n_seg).astype(np.int64)
         return np.clip(idx, 0, self.n_seg - 1)
-
-
-def _arc_length_along_polyline(point_m: np.ndarray, poly_m: np.ndarray) -> float:
-    """Closest-point projection of `point_m` onto the polyline `poly_m`.
-
-    Returns the normalized arc length (0=proximal, 1=distal) of the
-    projection, or the closest endpoint if the point projects outside
-    every segment.
-    """
-    if poly_m.shape[0] < 2:
-        return 0.0
-    seg_lens = np.linalg.norm(np.diff(poly_m, axis=0), axis=1)
-    cum = np.concatenate([[0.0], np.cumsum(seg_lens)])
-    total = cum[-1]
-    if total <= 0:
-        return 0.0
-    best_arc = 0.0
-    best_d2 = float("inf")
-    for j in range(poly_m.shape[0] - 1):
-        a, b = poly_m[j], poly_m[j + 1]
-        ab = b - a
-        ap = point_m - a
-        L2 = float(ab @ ab)
-        if L2 < 1e-30:
-            t = 0.0
-            closest = a
-        else:
-            t = float(np.clip((ap @ ab) / L2, 0.0, 1.0))
-            closest = a + t * ab
-        d2 = float(np.sum((point_m - closest) ** 2))
-        if d2 < best_d2:
-            best_d2 = d2
-            best_arc = (cum[j] + t * seg_lens[j]) / total
-    return best_arc
-
-
-def _interp_along_polyline(poly_m: np.ndarray, frac: float) -> np.ndarray:
-    """3D point at arc-length fraction ``frac`` along a polyline (in m)."""
-    seg_lens = np.linalg.norm(np.diff(poly_m, axis=0), axis=1)
-    arc = np.concatenate([[0.0], np.cumsum(seg_lens)])
-    L = arc[-1]
-    if L <= 0:
-        return poly_m[0].copy()
-    target = float(np.clip(frac, 0.0, 1.0)) * L
-    j = int(np.searchsorted(arc, target))
-    if j <= 0:
-        return poly_m[0].copy()
-    if j >= poly_m.shape[0]:
-        return poly_m[-1].copy()
-    a = (target - arc[j - 1]) / max(seg_lens[j - 1], 1e-30)
-    a = float(np.clip(a, 0.0, 1.0))
-    return (1.0 - a) * poly_m[j - 1] + a * poly_m[j]
 
 
 @dataclass
@@ -151,7 +103,7 @@ class BranchedSegmentation:
         poly_m = poly_um * 1e-6
         nseg = self.section_nseg[sec_idx]
         return np.stack([
-            _interp_along_polyline(poly_m, (k + 0.5) / nseg)
+            point_at_arc_fraction(poly_m, (k + 0.5) / nseg)
             for k in range(nseg)
         ])
 
@@ -165,7 +117,7 @@ class BranchedSegmentation:
         poly_m = poly_um * 1e-6
         out = np.zeros(centroids_m.shape[0], dtype=np.int64)
         for k in range(centroids_m.shape[0]):
-            arc = _arc_length_along_polyline(centroids_m[k], poly_m)
+            arc = arc_fraction_of_projection(centroids_m[k], poly_m)
             local = int(min(int(arc * nseg), nseg - 1))
             out[k] = seg_offset + local
         return out
@@ -266,48 +218,10 @@ class EcsPoissonSolver:
                 fem.assemble_scalar(area_form), op=MPI.SUM
             )
 
-        # Redirect empty-bin segments to the NEAREST non-empty NEURON
-        # segment ANYWHERE IN THE CELL (not just the same section).
-        # When AMS's alpha-wrap merges close-by sections (e.g. M&S j7's
-        # axon hillock proximal half merges into the soma surface),
-        # the proximal hillock's NEURON segments end up empty
-        # (A_k = 0). Their currents (the active inward Na at AP
-        # rising) need to go SOMEWHERE on the FEM mesh.
-        #
-        # Same-section redistribution moves them to the distal half of
-        # the same section — wrong physical location, since the
-        # alpha-wrap put the proximal-hillock's surface ONTO THE SOMA.
-        # Cell-wide nearest neighbor matches the merged geometry: the
-        # current ends up on the soma's segment closest to the
-        # original empty-bin position. Less dipole rotation.
-        self._redirect: dict[int, int] = {}
-        if isinstance(seg, BranchedSegmentation):
-            # Build 3D position of every NEURON segment center.
-            offsets = seg.section_seg_offsets
-            centers = np.zeros((n_seg, 3), dtype=np.float64)
-            for sec_i in range(len(seg.section_nseg)):
-                cs = seg.segment_centers_m(sec_i)   # in meters
-                lo, hi = offsets[sec_i], offsets[sec_i + 1]
-                centers[lo:hi] = cs
-            empties = np.where(self.A_k == 0)[0]
-            non_empties = np.where(self.A_k > 0)[0]
-            if non_empties.size:
-                non_empty_centers = centers[non_empties]
-                for k in empties:
-                    d2 = ((non_empty_centers - centers[k]) ** 2).sum(axis=1)
-                    self._redirect[int(k)] = int(non_empties[d2.argmin()])
-        elif isinstance(seg, CableSegmentation):
-            non_empties = np.where(self.A_k > 0)[0]
-            if non_empties.size:
-                for k in range(n_seg):
-                    if self.A_k[k] == 0:
-                        self._redirect[k] = int(
-                            non_empties[np.abs(non_empties - k).argmin()]
-                        )
-        if self._redirect:
-            n_dropped = len(self._redirect)
-            print(f"[EcsPoissonSolver] redirecting {n_dropped} empty-bin "
-                  f"segments cell-wide to nearest non-empty by 3D distance")
+        # Segments a mesher left with no facets (A_k == 0) have their
+        # current redirected to the nearest non-empty neighbour so it
+        # isn't silently dropped — see _compute_redirect.
+        self._redirect = self._compute_redirect(seg)
 
         L_terms = []
         for k in range(n_seg):
@@ -344,6 +258,48 @@ class EcsPoissonSolver:
         # bounding-box tree once here instead of on every probe() call
         # (which was rebuilding it once per timestep).
         self._bb_tree = geometry.bb_tree(mesh, mesh.topology.dim)
+
+    # -------------------------------------------------------------- #
+    def _compute_redirect(self, seg) -> dict[int, int]:
+        """Map each empty-bin segment (``A_k == 0``) to the nearest
+        non-empty NEURON segment by 3D distance.
+
+        Empty bins arise when a mesher merges nearby surfaces (e.g. AMS's
+        alpha-wrap fusing M&S j7's proximal axon hillock into the soma),
+        leaving some NEURON segments with no facets. Redirecting the
+        current cell-wide to the nearest non-empty center — rather than
+        within the same section — matches the merged geometry and
+        minimizes dipole rotation. Requires ``self.A_k`` to be filled.
+        """
+        n_seg = self.n_seg
+        redirect: dict[int, int] = {}
+        if isinstance(seg, BranchedSegmentation):
+            offsets = seg.section_seg_offsets
+            centers = np.zeros((n_seg, 3), dtype=np.float64)
+            for sec_i in range(len(seg.section_nseg)):
+                lo, hi = offsets[sec_i], offsets[sec_i + 1]
+                centers[lo:hi] = seg.segment_centers_m(sec_i)   # meters
+            empties = np.where(self.A_k == 0)[0]
+            non_empties = np.where(self.A_k > 0)[0]
+            if non_empties.size:
+                non_empty_centers = centers[non_empties]
+                for k in empties:
+                    d2 = ((non_empty_centers - centers[k]) ** 2).sum(axis=1)
+                    redirect[int(k)] = int(non_empties[d2.argmin()])
+        elif isinstance(seg, CableSegmentation):
+            non_empties = np.where(self.A_k > 0)[0]
+            if non_empties.size:
+                for k in range(n_seg):
+                    if self.A_k[k] == 0:
+                        redirect[k] = int(
+                            non_empties[np.abs(non_empties - k).argmin()]
+                        )
+        if redirect:
+            logger.info(
+                "redirecting %d empty-bin segment(s) cell-wide to nearest "
+                "non-empty by 3D distance", len(redirect)
+            )
+        return redirect
 
     # -------------------------------------------------------------- #
     def _partition_membrane_facets(
@@ -498,5 +454,5 @@ def run_fem_lfp(
         solver.step(imem_nA[:, ti])
         out[ti] = solver.probe(probe_xyz_um) * 1e6   # V → µV
         if progress and (ti < 3 or ti % max(1, n_t // 20) == 0):
-            print(f"  fem step {ti+1}/{n_t}")
+            logger.info("  fem step %d/%d", ti + 1, n_t)
     return out
