@@ -109,12 +109,19 @@ cell or the far-field V_e looks like it's decaying too fast (see the
 
 `mesh="auto"` picks `cylinder` for a single straight z-cable and
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
-what each mesher does. Only need the LSA — the fast, analytical
-line-source approximation? `model.line_source()` returns just that,
-skipping the mesh and FEM entirely (and needing no mesher / fem_neuron).
-It's handy for a quick estimate, a parameter sweep, or a sanity baseline
-before the full solve. Same setup as `solve()` — build the model before
-`finitialize`, run, then call it instead:
+what each mesher does.
+
+Progress and diagnostics go through the standard `logging` module (logger
+`fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
+library is silent by default.
+
+### LSA only (skip the FEM)
+
+`model.line_source()` returns just the line-source approximation — the fast,
+analytical estimate — with no mesh and no FEM (so it needs no mesher, and no
+`fem_neuron`). Reach for it for a quick look, a parameter sweep, or a
+baseline before the full solve. Same setup as `solve()`: build the model
+before `finitialize`, run, then call it instead.
 
 ```python
 model = ExtracellularModel(h.allsec(), probes_um)   # arms recording
@@ -130,13 +137,9 @@ lsa.plot("lsa.png")                # overlay figure (LSA trace only)
 lsa.save("lsa.npz")                # reload later with ExtracellularResult.load
 ```
 
-The returned `ExtracellularResult` is the same type `solve()` gives you, so
+The result is the same `ExtracellularResult` type `solve()` returns, so
 `t_ms`, `probes_um`, `v_m_mV`, `.plot()`, and `.save()` all work — only
 `v_e_fem_uV` is `None`.
-
-Progress and diagnostics go through the standard `logging` module (logger
-`fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
-library is silent by default.
 
 ## Bundled scenarios
 
