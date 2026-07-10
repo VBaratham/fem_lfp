@@ -99,8 +99,9 @@ ExtracellularModel(
 
 `mesh="auto"` picks `cylinder` for a single straight z-cable and
 `branched` for anything with real morphology. See `fem_lfp.MESHERS` for
-what each mesher does. Only need the analytical reference?
-`model.line_source()` skips the mesh and FEM entirely.
+what each mesher does. Only need the LSA — the fast, analytical
+line-source approximation? `model.line_source()` returns just that,
+skipping the mesh and FEM entirely.
 
 Progress and diagnostics go through the standard `logging` module (logger
 `fem_lfp`); call `logging.basicConfig(level=logging.INFO)` to see them. The
