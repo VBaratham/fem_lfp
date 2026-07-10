@@ -131,7 +131,7 @@ lsa = model.line_source()          # ExtracellularResult; no mesh is built
 
 v_e = lsa.v_e_lsa_uV               # (n_time, n_probe) LSA potential in µV
 assert lsa.v_e_fem_uV is None      # no FEM was run
-peak_per_probe = np.abs(v_e).max(axis=0)   # e.g. spike amplitude at each probe
+peak_per_probe = np.abs(v_e).max(axis=0)   # peak |V_e| at each probe
 
 lsa.plot("lsa.png")                # overlay figure (LSA trace only)
 lsa.save("lsa.npz")                # reload later with ExtracellularResult.load
